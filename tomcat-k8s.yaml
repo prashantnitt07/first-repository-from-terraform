@@ -1,0 +1,111 @@
+# A new java-based application is ready to be deployed on a Kubernetes cluster. 
+# The development team had a meeting with the DevOps team share requirements and application scope. 
+# The team is ready to setup an application stack for it under their existing cluster. 
+# Below you can find the details for this:
+
+# Create a namespace named tomcat-namespace-nautilus.
+
+# Create a deployment for tomcat app which should be named tomcat-deployment-nautilus 
+# under the same namespace you created. Replicas count should be 1, the container should be named as tomcat-container-nautilus, 
+# its image should be gcr.io/kodekloud/centos-ssh-enabled:tomcat and its container port should be 8080.
+
+# Create a service for tomcat app which should be named as tomcat-service-nautilus under 
+# the same namespace you created. Service type should be NodePort. 
+# Port's protocol should be TCP, port should be 80, targetPort should be 8080 and nodePort should be 32227.
+
+# Before clicking on Finish button please make sure the application is up and running.
+
+# You can use any labels as per your choice.
+
+# Note: The kubectl on jump_host has been configured to work with the kubernetes cluster.
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name:  tomcat-deployment-nautilus
+  namespace: grafana-all
+  labels:
+    name: webdep
+    app: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: webpod
+      app: demo
+  template:
+    metadata:
+      name: webpod
+      labels:
+        name: webpod
+        app: demo
+    spec:
+      containers:
+        - name: tomcat-container-nautilus
+          image: gcr.io/kodekloud/centos-ssh-enabled:tomcat
+          ports:
+            - containerPort: 8080
+          env:
+          - name: CATALINA_OPTS
+            value: "-javaagent:/data/jmx_prometheus_javaagent-0.20.0.jar=8088:/jmx/prometheus-jmx-config.yaml"
+          - name: JAVA_OPTS
+            value: " -javaagent:/data/grafana-opentelemetry-java.jar"
+          - name:  OTEL_EXPORTER_OTLP_ENDPOINT
+            value: http://grafana-all-grafana-agent.grafana-all.svc.cluster.local:4318
+          - name: OTEL_TRACES_EXPORTER
+            value: otlp
+          - name: OTEL_METRICS_EXPORTER
+            value: none
+          - name: OTEL_LOGS_EXPORTER
+            value: none
+          - name: OTEL_RESOURCE_ATTRIBUTES
+            value: service.name=tomcat
+
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+          volumeMounts:
+          - mountPath: "/jmx"
+            name: prometheus-jmx-config
+          - mountPath: "/data"
+            name: jmx-prometheus-javaagent
+
+      volumes:
+      - name: jmx-prometheus-javaagent
+        hostPath:
+          path: /tmp/data
+      - configMap:
+          name: prometheus-jmx-config
+        name: prometheus-jmx-config
+
+---            
+apiVersion: v1
+kind: Service
+metadata:
+  name: tomcat-service-nautilus
+  namespace: grafana-all
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8088"
+spec:
+  type: NodePort
+  selector:
+    name: webpod
+    app: demo
+  ports:
+      # By default and for convenience, the `targetPort` is set to the same value as the `port` field.
+    - port: 80
+      targetPort: 8080
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane will allocate a port from a range (default: 30000-32767)
+      nodePort: 32226
+      name: http
+    - name: jmx-metrics
+      port: 8088
+      protocol: TCP
